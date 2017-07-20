@@ -39,7 +39,6 @@ def audit(data_list, tags, debug=False):
     __data__ = {}
     __secdata__ = _secedit_export()
     __sidaccounts__ = _get_account_sid()
-    log.error('__sidaccounts__= {}'.format(__sidaccounts__))
     for profile, data in data_list:
         _merge_yaml(__data__, data, profile)
     __tags__ = _get_tags(__data__)
@@ -59,12 +58,9 @@ def audit(data_list, tags, debug=False):
                 name = tag_data['name']
                 audit_type = tag_data['type']
                 output = tag_data['match_output'].lower()
-                log.error('**name= {}'.format(name))
-                log.error('*output={}'.format(output))
 
                 # Blacklisted audit (do not include)
                 if audit_type == 'blacklist':
-                    log.error('Inside blacklist***')
                     if 'no one' in output:
                         if name not in __secdata__:
                             ret['Success'].append(tag_data)
@@ -87,6 +83,9 @@ def audit(data_list, tags, debug=False):
                             match_output = _reg_value_translator(tag_data['match_output'])
                         else:
                             match_output = tag_data['match_output']
+                        if ',' in sec_value and '\\' in sec_value:
+                            sec_value = sec_value.split(',')
+                            match_output = match_output.split(',')
                         if 'account' in tag_data['value_type']:
                             secret = _translate_value_type(sec_value, tag_data['value_type'], match_output, __sidaccounts__)
                         else:
@@ -96,7 +95,7 @@ def audit(data_list, tags, debug=False):
                         else:
                             ret['Failure'].append(tag_data)
                     else:
-                        log.error('name was not in __secdata__')
+                        log.error('name {} was not in __secdata__'.format(name))
                         ret['Failure'].append(tag_data)
 
     return ret
@@ -284,19 +283,28 @@ def _translate_value_type(current, value, evaluator, __sidaccounts__=False):
         else:
             return False
     elif 'equal' in value:
-        if ',' not in evaluator:
+        if ',' not in evaluator and type(evaluator) != list:
             evaluator = _evaluator_translator(evaluator)
-
+        if type(current) == list:
+            ret_final = []
+            for item in current:
+                item = item.lower()
+                if item in evaluator:
+                    ret_final.append(True)
+                else:
+                    ret_final.append(False)
+            if False in ret_final:
+                return False
+            else:
+                return True
         if current.lower() == evaluator:
             return True
         else:
             return False
     elif 'account' in value:
         evaluator = _account_audit(evaluator, __sidaccounts__)
-        log.error('evaluator= {}'.format(evaluator))
         evaluator_list = evaluator.split(',')
         current_list = current.split(',')
-        log.error('evaluator_list= {0} ***** current_list= {1}'.format(evaluator_list, current_list))
         list_match = False
         for list_item in evaluator_list:
             if list_item in current_list:
@@ -331,7 +339,9 @@ def _translate_value_type(current, value, evaluator, __sidaccounts__=False):
 def _evaluator_translator(input_string):
     '''This helper function takes words from the CIS yaml and replaces
     them with what you actually find in the secedit dump'''
-    input_string = input_string.replace(' ','').lower()
+    if type(input_string) == str:
+        input_string = input_string.replace(' ','').lower()
+
     if 'enabled' in input_string:
         return '1'
     elif 'disabled' in input_string:
